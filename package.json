@@ -1,0 +1,16 @@
+﻿{
+  "name": "com.abdulal.rendereffects",
+  "author": "Abdulrahmen Almodaimegh",
+  "displayName": "FS Rendering Effects",
+  "description": "Collection of rendering passes & shader for bloom, VFX, and more",
+  "unity": "6000.1",
+  "version": "0.5.0",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.1.0",
+    "com.unity.mathematics": "1.3.2"
+  }
+}

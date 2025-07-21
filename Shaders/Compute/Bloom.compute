@@ -1,0 +1,71 @@
+﻿#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Filtering.hlsl"
+#include "../ShaderLibrary/Blur.hlsl"
+#include "../ShaderLibrary/Filtering.hlsl"
+
+#pragma kernel Prefilter
+#pragma kernel BlurH
+#pragma kernel BlurV
+#pragma kernel UpSample
+
+Texture2D _Source;
+RWTexture2D<float4> _Dest;
+
+float4 _SourceSize;
+float4 _DestSize;
+
+Texture2D _SourceTexLowMip;
+float4 _SourceTexLowMipSize;
+
+float _Threshold;
+float _Intensity;
+float _Size;
+
+int _KernelSize;
+#define KERNEL_SIZE 8
+
+[numthreads(KERNEL_SIZE,KERNEL_SIZE,1)]
+void Prefilter(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= _DestSize.z || id.y >= _DestSize.w) return; // Out of bounds
+
+	float2 uv = (id.xy + 0.5) * _DestSize.xy;
+	float4 col = DownSample13Tap(_Source, uv, _SourceSize.xy);
+	float luma = Luminance(col.rgb);
+	col.rgb *= saturate((luma - _Threshold)/(1 - _Threshold));
+
+	_Dest[id.xy] += col;// * _Intensity; // additive
+}
+
+[numthreads(KERNEL_SIZE,KERNEL_SIZE,1)]
+void BlurH(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= _DestSize.z || id.y >= _DestSize.w) return; // Out of bounds
+	float2 uv = (id.xy + 0.5) * _DestSize.xy;
+	_Dest[id.xy] = _Intensity * Blur_GaussianH_9(_Source, sampler_LinearClamp, uv, 2 * _SourceSize.xy);
+}
+
+
+[numthreads(KERNEL_SIZE,KERNEL_SIZE,1)]
+void BlurV(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= _DestSize.z || id.y >= _DestSize.w) return; // Out of bounds
+
+	float2 uv = (id.xy + 0.5) * _DestSize.xy;
+	_Dest[id.xy] = Blur_GaussianV_9_Bilinear(_Source, sampler_LinearClamp, uv, _SourceSize.xy);
+}
+
+[numthreads(KERNEL_SIZE,KERNEL_SIZE,1)]
+void UpSample(uint3 id : SV_DispatchThreadID)
+{
+	if (id.x >= _DestSize.z || id.y >= _DestSize.w) return; // Out of bounds
+
+	float2 uv = (id.xy + 0.5) * _DestSize.xy;
+	
+	float3 highMip = SAMPLE_TEXTURE2D_LOD(_Source, sampler_LinearClamp, uv, 0);
+	//float3 lowMip = SampleTexture2DBicubic(TEXTURE2D_X_ARGS(_SourceTexLowMip, sampler_LinearClamp), uv, _SourceTexLowMipSize.zwxy, (1.0).xx, unity_StereoEyeIndex);
+	float3 lowMip = UpSampleTent9Tap(_SourceTexLowMip, uv, _SourceTexLowMipSize.xy);
+
+	_Dest[id.xy] = float4(lerp(highMip, lowMip * _Intensity, _Size), 1);
+}

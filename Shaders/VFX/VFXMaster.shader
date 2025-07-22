@@ -47,6 +47,11 @@
         [Toggle] _MultiplyByAlpha("Multiply by Alpha", Float) = 0
         _ColorBlendOffset("Gradient Offset", Range(-1, 1)) = 0
         
+        [Space(10)]
+        [Toggle(_ALPHA_CUTOFF_MODIFIES_COLOR)] _AlphaCutoffInfluencesColor("Shift Color Blend Value Based On Alpha Cutoff", Float) = 0
+        [ShowIf(_ALPHA_CUTOFF_MODIFIES_COLOR)] _ColorCutoff("Color Blend Cutoff", Range(0,1)) = 0.5 // TODO: Improve on this
+        [Space(10)]
+        
         [Header(Manual Colors)]
         [HideIf(_USE_GRADIENT_MAP)] [HDR] _HighColor("High Color", Color) = (1, 1, 1, 1)
         [HideIf(_USE_GRADIENT_MAP)] [HDR] _LowColor("Low Color", Color) = (0, 0, 0, 1)
@@ -83,7 +88,7 @@
         _AlphaCutoff("Alpha Cutoff", Range(0, 1)) = 0
         _AlphaCutoffSmoothness("Alpha Cutoff Smoothness", Range(0, 1)) = 0
         
-        [Toggle] _UseAlphaForDissolve("Use Vertex Alpha for Dissolve", Float) = 0
+        [Toggle] _UseVertexAlphaForDissolve("Use Vertex Alpha for Dissolve", Float) = 0
         
         // Edge burn feature
         [Header(Cutoff Burn Colors)]
@@ -201,6 +206,8 @@
         #pragma shader_feature_local _SWIRL
         
         #pragma shader_feature_local _DISTORTION
+
+        #pragma shader_feature_local _ALPHA_CUTOFF_MODIFIES_COLOR
         
         #pragma shader_feature_local _USE_GRADIENT_MAP
         
@@ -272,6 +279,8 @@ CBUFFER_START(UnityPerMaterial)
         float _MultiplyByAlpha; // Multiply by Alpha
         float _ColorBlendOffset; // Gradient Offset
 
+        float _ColorCutoff;
+
         // Manual Colors
         float4 _HighColor; // High Color
         float4 _LowColor; // Low Color
@@ -305,7 +314,8 @@ CBUFFER_START(UnityPerMaterial)
         float _Intensity;
         float _AlphaCutoff; // Alpha Cutoff
         float _AlphaCutoffSmoothness; // Alpha Cutoff Smoothness
-        int _UseAlphaForDissolve; // Use Vertex Alpha for Dissolve
+        float _AlphaCutoffInfluencesColor;
+        int _UseVertexAlphaForDissolve; // Use Vertex Alpha for Dissolve
 
         // Cutoff Burn Colors
         float4 _BurnColor; // Burn Color
@@ -378,6 +388,13 @@ CBUFFER_END
             col = saturate(lerp(0.5, col, contrast)) * power;
             col.rgb *= lerp(1, col.a, grayScaleForAlpha * _MultiplyByAlpha); // Multiply by alpha if needed (only if alpha is alpha) Wait, note how we're multiplying by alpha TWICE, check end of shader
             return col;
+        }
+
+        // Color blend shifts based on alpha cutoff, basically remapping the range from [0, 1] to [_AlphaCutoff, _ColorCutoff].
+        float GetColorBlend(float grayscaleValue)
+        {
+	        float cutoff = lerp(_AlphaCutoff, 2, _ColorCutoff);
+	        return smoothstep(_AlphaCutoff, cutoff, grayscaleValue);	
         }
 
         // Value in x, alpha in y
@@ -469,7 +486,7 @@ CBUFFER_END
 
         Pass
         {
-            Name "HVakisVFX"
+            Name "VFX Main"
             Tags
             {
                 "LightMode"="VFX" // Glow breaks w/ back-face culling!
@@ -600,24 +617,28 @@ CBUFFER_END
 
                 // Cutoff
                 float cutoff = saturate(_AlphaCutoff + i.uv.z);
-                cutoff += (1 - i.color.a) * _UseAlphaForDissolve;
+                cutoff += (1 - i.color.a) * _UseVertexAlphaForDissolve;
                 if (alpha <= saturate(cutoff)) discard;
-                //clip(alpha - saturate(cutoff));
+                //clip(alpha - saturate(cutoff) - FLT_EPS);
                 alpha =
                     smoothstep(cutoff, saturate(cutoff + _AlphaCutoffSmoothness), alpha)
-                    * _ColorTint.a * saturate(i.color.a - _UseAlphaForDissolve);
+                    * _ColorTint.a * saturate(i.color.a - _UseVertexAlphaForDissolve);
 
                 // Banding
-                value += _ColorBlendOffset;
+                value += _ColorBlendOffset; // Need an option to shift value based on cutoff
 #ifdef _COLOR_BANDING
                 value = round(value * _Bands) / _Bands;
 #endif
 
                 value = pow(value, _ValuePower);
 
+#ifdef _ALPHA_CUTOFF_MODIFIES_COLOR                
+                float gradientVal = GetColorBlend(saturate(value));
+#else                
                 float gradientVal = saturate(value);// + _ColorBlendOffset);
+#endif                
 
-                float4 col = float4(i.color.rgb, _UseAlphaForDissolve ? i.color.a : 1) * _ColorTint;
+                float4 col = float4(i.color.rgb, _UseVertexAlphaForDissolve ? i.color.a : 1) * _ColorTint;
 #ifdef _USE_GRADIENT_MAP
                 col *= SAMPLE_TEXTURE2D(_GradientMap, sampler_GradientMap, float2(gradientVal, 0));
 #else
@@ -638,7 +659,8 @@ CBUFFER_END
                 alpha *= depthDelta;
 #endif                
                 
-                col.a *= alpha;
+                col.a *= alpha; // Multiply to take into account the alpha of the selected color state
+                
 #ifdef _BURN_COLORS
                 col.rgb = lerp(col.rgb, _BurnColor, smoothstep(alpha - cutoff, saturate(alpha - cutoff + _BurnSoftness), _BurnSize));// * smoothstep(0.001, 0.1, cutoff);
 #endif
@@ -649,11 +671,12 @@ CBUFFER_END
 #endif
 
                 col *= _Intensity;
-                o.color = (col * lerp(1, alpha, IS_PREMULTIPLIED));
+                o.color = col;
+                o.color.rgb *= lerp(1, alpha, IS_PREMULTIPLIED); // Some wack alpha multiplication going on (already the texture gets premultiplied with it, and we multiply the alpha twice here)
                 o.color *= lerp(_BackFaceTint, 1, isFrontFace);
                 o.color.a = saturate(o.color.a); // Make sure this is [0,1] otherwise the blending causes bad color distortion in the BG (i.e negative colors)
                 o.glow = _EmissionColor * _EmissionIntensity * o.color.a;
-
+                
                 float colorLuma = saturate(max(o.color.r, max(o.color.g, o.color.b)));
                 // flip if emission color influence is negative
                 colorLuma = lerp(1 - colorLuma, colorLuma, saturate(sign(_EmissionColorInfluence)));
@@ -661,6 +684,7 @@ CBUFFER_END
                 //o.color = lerp(1, colorLuma, abs(_EmissionColorInfluence)); // For Debug
                 //o.glow = 0;
 
+                
 #ifdef _EMISSION_TEXTURE
                 o.glow *= SampleTex(_EmissionTex, sampler_EmissionTex, uv, _EmissionTex_ST);
 #endif

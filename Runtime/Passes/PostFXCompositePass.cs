@@ -9,12 +9,15 @@ namespace FS.Rendering
 {
     public class PostFXCompositePass : ScriptableRenderPass, IDisposable
     {
-        private Material m_postFXMaterial;
+        private readonly Material m_postFXMaterial;
         
         public PostFXCompositePass()
         {
             renderPassEvent = RenderPassEvent.BeforeRenderingPostProcessing;
-            m_postFXMaterial = new Material(Shader.Find("Hidden/PostProcessing/FinalComposite"));
+            m_postFXMaterial = new Material(Shader.Find("Hidden/PostProcessing/FinalComposite"))
+            {
+                hideFlags = HideFlags.HideAndDontSave
+            };
         }
 
         public void Dispose()

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Animancer;
 using Sirenix.OdinInspector;
 using UnityEditor;
@@ -44,6 +45,7 @@ namespace FS.Rendering
     }
     
     // Controls playing back the VFX & all that shit dw about this part for now
+    [ExecuteInEditMode]
     public class VFXController : MonoBehaviour
     {
         public VFXPool m_vfxPool;
@@ -56,7 +58,7 @@ namespace FS.Rendering
 
         private void Awake()
         {
-            InitFXData();
+            //InitFXData();
         }
 
         [Button]
@@ -116,5 +118,24 @@ namespace FS.Rendering
             yield return new WaitForSeconds(time);
             VFXManager.Instance.StopFX(this);
         }
+
+#if UNITY_EDITOR
+        public void Simulate(float playbackTime)
+        {
+            foreach (var animator in m_animators) animator.Time = playbackTime;
+            foreach (var system in m_particleSystems)
+            {
+                if (playbackTime == 0)
+                {
+                    system.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
+                    system.randomSeed = system.randomSeed; // This is important! If the setter is not called it'll randomly get a seed every frame it seems from editor playback
+                    system.Play(false);
+                }
+                
+                system.Simulate(playbackTime, false, true);
+                system.time = playbackTime;
+            }
+        }
+#endif        
     }
 }

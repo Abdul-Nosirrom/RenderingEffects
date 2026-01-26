@@ -38,24 +38,50 @@ namespace FS.Rendering
         {
             foreach (var pool in m_pool.Values) pool?.Dispose();
             m_pool.Clear();
+#if UNITY_EDITOR
+            m_poolDebug.Clear();
+#endif            
         }
 
-        public void PlayVFX(VFXController fxPrefab, VFXParams playParams = default)
+        public VFXBase PlayVFX(VFXBase fxPrefab, VFXParams playParams = default, VFXDirector parentDirector = null)
         {
-            var fxID = fxPrefab.GetInstanceID();
-            if (!m_pool.ContainsKey(fxID))
+            if (fxPrefab == null)
+            {
+                Debug.LogWarning($"[VFXManager] Attempted to play a VFX with a null prefab!");
+                return null;
+            }
+            
+            if (!m_pool.ContainsKey(fxPrefab.GetInstanceID()))
             {
                 var fxPool = new VFXPool(fxPrefab, maxSize: 10);
-                m_pool.Add(fxID, fxPool);
+                m_pool.Add(fxPrefab.GetInstanceID(), fxPool);
+#if UNITY_EDITOR
+                m_poolDebug.Add(fxPrefab.GetInstanceID(), fxPrefab.name);           
+#endif                
             }
 
-            var fx = m_pool[fxID].Get();
+            var fx = m_pool[fxPrefab.GetInstanceID()].Get();
+            fx.m_parentDirector = parentDirector;
             fx.Play(playParams);
+            return fx;
         }
-
-        public void StopFX(VFXController fxInstance)
+        
+#if UNITY_EDITOR
+        private readonly Dictionary<int, string> m_poolDebug = new();
+        [Sirenix.OdinInspector.ShowInInspector, Sirenix.OdinInspector.ReadOnly]
+        private Dictionary<string, string> PoolStats
         {
-            fxInstance.m_vfxPool?.Release(fxInstance);
+            get
+            {
+                var stats = new Dictionary<string, string>();
+                foreach (var kvp in m_pool)
+                {
+                    var pool = kvp.Value;
+                    stats[m_poolDebug[kvp.Key]] = $"Active: {pool.CountActive} | Inactive: {pool.CountInactive} | Total: {pool.CountAll}";
+                }
+                return stats;
+            }
         }
+#endif
     }
 }

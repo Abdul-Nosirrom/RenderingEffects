@@ -1,6 +1,7 @@
 ﻿using UnityEditor;
 using UnityEditor.Rendering;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace FS.Rendering.Editor
 {
@@ -98,7 +99,7 @@ namespace FS.Rendering.Editor
 
             if (!bElementHidden)
             {
-                if (m_isToggle && prop.type == MaterialProperty.PropType.Float)
+                if (m_isToggle && prop.propertyType == ShaderPropertyType.Float)
                     prop.floatValue = EditorGUILayout.Toggle(label, prop.floatValue > 0.0f) ? 1f : 0f;
                 else 
                     editor.DefaultShaderProperty(prop, label);
@@ -170,7 +171,7 @@ namespace FS.Rendering.Editor
 
             if (!bElementHidden)
             {
-                if (m_isToggle && prop.type == MaterialProperty.PropType.Float)
+                if (m_isToggle && prop.propertyType == ShaderPropertyType.Float)
                     prop.floatValue = EditorGUILayout.Toggle(label, prop.floatValue > 0.0f) ? 1f : 0f;
                 else 
                     editor.DefaultShaderProperty(prop, label);
@@ -193,6 +194,103 @@ namespace FS.Rendering.Editor
         public override void OnGUI(Rect position, MaterialProperty prop, string label, MaterialEditor editor)
         {
             base.OnGUI(position, prop, label, editor);
+        }
+    }
+    
+    public class TooltipDecorator : MaterialPropertyDrawer
+    {
+        private string m_toolTip;
+        
+        public TooltipDecorator(string tooltip)
+        {
+            m_toolTip = tooltip;
+        }
+
+        public override float GetPropertyHeight(MaterialProperty prop, string label, MaterialEditor editor) => 0;
+
+        public override void OnGUI(Rect position, MaterialProperty prop, string label, MaterialEditor editor)
+        {
+            position.height = base.GetPropertyHeight(prop, label, editor);
+            GUI.Label(position, new GUIContent("", m_toolTip));
+        }
+    }
+
+    public class HelpBoxDecorator : MaterialPropertyDrawer
+    {
+        private string m_helpBoxText;
+        
+        public HelpBoxDecorator(string helpBoxText)
+        {
+            m_helpBoxText = helpBoxText;
+        }
+        
+        public override void OnGUI(Rect position, MaterialProperty prop, string label, MaterialEditor editor)
+        {
+            EditorGUI.HelpBox(position, m_helpBoxText, MessageType.Info);
+        }
+    }
+    
+    public class BlendModeDrawer : MaterialPropertyDrawer
+    {
+        private static readonly int SrcBlend = Shader.PropertyToID("_SrcBlend");
+        private static readonly int DstBlend = Shader.PropertyToID("_DstBlend");
+        
+        private readonly string[] options = { "Opaque", "Alpha", "Premultiplied", "Additive", "Soft Additive", "Multiply", "2x Multiply" };
+
+        // SrcBlend, DstBlend pairs
+        private readonly (BlendMode src, BlendMode dst)[] blendPairs = {
+            (BlendMode.One, BlendMode.Zero),              // Opaque
+            (BlendMode.SrcAlpha, BlendMode.OneMinusSrcAlpha), // Alpha
+            (BlendMode.One, BlendMode.OneMinusSrcAlpha),  // Premultiplied
+            (BlendMode.One, BlendMode.One),               // Additive
+            (BlendMode.OneMinusDstColor, BlendMode.One),  // Soft Additive
+            (BlendMode.DstColor, BlendMode.Zero),         // Multiply
+            (BlendMode.DstColor, BlendMode.SrcColor),     // 2x Multiply
+        };
+        
+        public override void OnGUI(Rect position, MaterialProperty prop, string label, MaterialEditor editor)
+        {
+            var mat = (Material)editor.target;
+            
+            // Find index based on actual blend values
+            var currentSrc = (BlendMode)mat.GetFloat(SrcBlend);
+            var currentDst = (BlendMode)mat.GetFloat(DstBlend);
+            
+            int index = -1;
+            for (int i = 0; i < blendPairs.Length; i++)
+            {
+                if (blendPairs[i].src == currentSrc && blendPairs[i].dst == currentDst)
+                {
+                    index = i;
+                    break;
+                }
+            }
+            
+            // Build display options - prepend "Unknown" if needed
+            string[] displayOptions = options;
+            if (index == -1)
+            {
+                displayOptions = new string[options.Length + 1];
+                displayOptions[0] = $"Unknown ({currentSrc}, {currentDst})";
+                options.CopyTo(displayOptions, 1);
+                index = 0;
+            }
+            
+            EditorGUI.BeginChangeCheck();
+            int newIndex = EditorGUI.Popup(position, label, index, displayOptions);
+        
+            if (EditorGUI.EndChangeCheck())
+            {
+                // Adjust index if we had the Unknown option
+                int blendIndex = displayOptions.Length > options.Length ? newIndex - 1 : newIndex;
+                
+                if (blendIndex >= 0)
+                {
+                    prop.floatValue = blendIndex;
+                    mat.SetFloat(SrcBlend, (float)blendPairs[blendIndex].src);
+                    mat.SetFloat(DstBlend, (float)blendPairs[blendIndex].dst);
+                }
+            }
         }
     }
 }

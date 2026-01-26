@@ -7,8 +7,10 @@
         
         [Space(10)]
         
-        [Normal] _DistortionGuide("Distortion Guide", 2D) = "bump" {}
+        _DistortionGuide("Distortion Guide", 2D) = "bump" {}
         _DistortionAmount("Distortion Amount", Range(0, 10)) = 0
+        _DistortionScale("Distortion Scale", Float) = 1
+        [Toggle(_CLAMP_DISTORTION_UV)] _DistortionUVClamp("Distortion UV Clamp", Range(0, 10)) = 0
         
         [Space(10)]
         
@@ -27,6 +29,7 @@
         LOD 100
         Cull Off
         ZTest LEqual
+        ZWrite Off
         
         Pass
         {
@@ -70,6 +73,8 @@
                 float4 _DistortionGuide_ST;
 
                 float _DistortionAmount;
+                float _DistortionScale;
+                float _DistortionUVClamp;
                 float _ChromaticAberrationStrength;
             CBUFFER_END
 
@@ -92,8 +97,12 @@
                 float2 maskUV = TRANSFORM_TEX(texUV, _MaskTex);
                 float2 distortionUV = TRANSFORM_TEX(texUV, _DistortionGuide);// + float2(0,0.1) * _Time.y;
 
+                // Scale distortion from center
+                distortionUV = (distortionUV - 0.5f) * _DistortionScale + 0.5f;
+                distortionUV = lerp(distortionUV, saturate(distortionUV), _DistortionUVClamp);
+
                 float maskVal = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, maskUV);
-                float2 distortionVec = UnpackNormal(SAMPLE_TEXTURE2D(_DistortionGuide, sampler_DistortionGuide, distortionUV)).xy; // Keep in [0,1]
+                float2 distortionVec = (SAMPLE_TEXTURE2D(_DistortionGuide, sampler_DistortionGuide, distortionUV).xy - 0.5f) * 2; // Keep in [0,1]
                 distortionVec *= _DistortionAmount * maskVal;
                 
                 // sample the texture

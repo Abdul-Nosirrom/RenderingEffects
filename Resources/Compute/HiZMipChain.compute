@@ -1,0 +1,55 @@
+#define HIZ_THREAD_GROUP_SIZE 8
+
+uint2 _MipDimensions;
+
+// ======== Depth Copy to 0th Mip ============ //
+#pragma kernel CopyDepth
+
+Texture2D<float> _OriginalDepth;
+RWTexture2D<float> _ZMip_0;
+
+[numthreads(HIZ_THREAD_GROUP_SIZE,HIZ_THREAD_GROUP_SIZE,1)]
+void CopyDepth(uint3 id : SV_DispatchThreadID)
+{
+    // Just a copy
+    // Bounds check - dispatch may overshoot texture edges
+    if (any(id.xy >= _MipDimensions)) return;
+    
+    _ZMip_0[id.xy] = _OriginalDepth[id.xy];
+}
+
+
+// ======== Down Sample Chain ================ //
+#pragma kernel DepthDownSample
+
+Texture2D<float> _ZMip_From;
+RWTexture2D<float> _ZMip_To;
+int _SrcMipLevel;
+
+float ClosestDepth(float depthA, float depthB)
+{
+#if UNITY_REVERSED_Z
+    return max(depthA, depthB);
+#else
+    return min(depthA, depthB);
+#endif
+}
+
+[numthreads(HIZ_THREAD_GROUP_SIZE,HIZ_THREAD_GROUP_SIZE,1)]
+void DepthDownSample(uint3 id : SV_DispatchThreadID)
+{
+    // _ZMip_To = closest(2x2 block of current _ZMipFrom)
+    if (any(id.xy >= _MipDimensions)) return;
+    
+    // Each output pixel maps to a 2x2 block in the source
+    uint2 srcCoord = id.xy * 2;
+    
+    // Get the closest depth in a 2x2 block, need to explicitly specify mip level otherwise just [coords] gets mip 0 (which is unwritten to except in first case where proper depth buffer is bound)
+    float d0 = _ZMip_From.Load(int3(srcCoord + uint2(0, 0), _SrcMipLevel));
+    float d1 = _ZMip_From.Load(int3(srcCoord + uint2(1, 0), _SrcMipLevel));
+    float d2 = _ZMip_From.Load(int3(srcCoord + uint2(0, 1), _SrcMipLevel));
+    float d3 = _ZMip_From.Load(int3(srcCoord + uint2(1, 1), _SrcMipLevel));
+    
+    // Closest depth
+    _ZMip_To[id.xy] = ClosestDepth(ClosestDepth(d0, d1), ClosestDepth(d2, d3));
+}

@@ -12,6 +12,8 @@ namespace FS.Rendering
         public BloomPass.BloomSettings m_bloomSettings; // Todo: Move these to FXData so everything can access it
         
         private FXPipelineInit m_fxInit;
+
+        private HiZGenerationPass m_HiZGenPass;
         
         private FXMeshPass m_fxMeshPass;
         
@@ -24,6 +26,8 @@ namespace FS.Rendering
         public override void Create()
         {
             m_fxInit = new FXPipelineInit();
+            
+            m_HiZGenPass = new HiZGenerationPass();
 
             m_fxMeshPass = new FXMeshPass();
             
@@ -43,6 +47,7 @@ namespace FS.Rendering
         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
         {
             renderer.EnqueuePass(m_fxInit);
+            renderer.EnqueuePass(m_HiZGenPass);
             renderer.EnqueuePass(m_fxMeshPass);
             renderer.EnqueuePass(m_grabDistortionPass);
             renderer.EnqueuePass(m_bloomPassEx);

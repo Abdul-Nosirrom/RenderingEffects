@@ -12,12 +12,19 @@ namespace FS.Rendering
         public TextureHandle m_bloomResult;
 
         public TextureHandle m_grabDistortionTexture;
+
+        /// <summary>
+        /// Hierarchical Z-Buffer, mip chain sampling the *closest* depth of each 2x2 block
+        /// Great for any ray-marching code needing to skip large empty spaces
+        /// </summary>
+        public TextureHandle m_HiZMipChain;
         
         public override void Reset()
         {
             m_bloomTexture = TextureHandle.nullHandle;
             m_bloomResult = TextureHandle.nullHandle;
             m_grabDistortionTexture = TextureHandle.nullHandle;
+            m_HiZMipChain = TextureHandle.nullHandle;
         }
     }
     
@@ -53,6 +60,8 @@ namespace FS.Rendering
                 desc.name = "FX_GrabDistortion";
                 desc.format = GraphicsFormat.R16G16B16A16_SNorm ; // Allow negative values as we're encoding vectors
                 fxData.m_grabDistortionTexture = renderGraph.CreateTexture(desc);
+
+                fxData.m_HiZMipChain = HiZGenerationPass.InitMipChain(renderGraph, frameData);
             }
         }
     }

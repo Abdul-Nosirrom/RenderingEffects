@@ -10,6 +10,7 @@ namespace FS.Rendering
     /// Base class for VFX, this is what gets pooled.
     /// </summary>
     [ExecuteInEditMode]
+    [Icon("Packages/com.abdulal.rendereffects/Editor/Resources/Icons/VFXBase Icon.png")]
     public abstract class VFXBase : MonoBehaviour
     {
         internal VFXPool m_vfxPool;
@@ -104,7 +105,7 @@ namespace FS.Rendering
 
         public void Stop(bool immediate = false)
         {
-            if (!IsActive) return;
+            if (this == null || !IsActive) return;
 
             IsStopping = true;
             
@@ -211,6 +212,12 @@ namespace FS.Rendering
         {
             UnityEditorInternal.InternalEditorUtility.RepaintAllViews(); // Force repaint of inspector to update slider
             m_editorPreviewCurrentTime = EditorPlaybackTime;
+        }
+
+        private void OnDestroy()
+        {
+            // Safety
+            EditorApplication.update -= SimulateEditorPreviewUpdate;
         }
 #endif
     }

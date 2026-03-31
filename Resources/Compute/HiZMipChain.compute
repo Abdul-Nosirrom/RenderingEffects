@@ -1,5 +1,8 @@
 #define HIZ_THREAD_GROUP_SIZE 8
 
+// Include to get the reverse Z in there
+#include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Common.hlsl"
+
 uint2 _MipDimensions;
 
 // ======== Depth Copy to 0th Mip ============ //
@@ -29,9 +32,9 @@ int _SrcMipLevel;
 float ClosestDepth(float depthA, float depthB)
 {
 #if UNITY_REVERSED_Z
-    return max(depthA, depthB);
+    return max(depthA, depthB);  // closest to camera = largest value
 #else
-    return min(depthA, depthB);
+    return min(depthA, depthB);  // closest to camera = smallest value
 #endif
 }
 
@@ -50,6 +53,30 @@ void DepthDownSample(uint3 id : SV_DispatchThreadID)
     float d2 = _ZMip_From.Load(int3(srcCoord + uint2(0, 1), _SrcMipLevel));
     float d3 = _ZMip_From.Load(int3(srcCoord + uint2(1, 1), _SrcMipLevel));
     
+    float minDepth = ClosestDepth(ClosestDepth(d0, d1), ClosestDepth(d2, d3));
+    
+    // If resolution is not a power of 2, we need to take 3x3 blocks to avoid missing texels
+    float2 input_res, output_res;
+    _ZMip_From.GetDimensions(input_res.x, input_res.y);
+    _ZMip_To.GetDimensions(output_res.x, output_res.y);
+    float2 resRatio = input_res / output_res;
+    
+    bool needExtraSampleX = resRatio.x > 2;
+    bool needExtraSampleY = resRatio.y > 2;
+    
+    // Need extra samples? Factor in an additional cell in each dimension
+    minDepth = needExtraSampleX ? ClosestDepth(minDepth, ClosestDepth(
+        _ZMip_From.Load(int3(srcCoord + uint2(2, 0), _SrcMipLevel)),
+        _ZMip_From.Load(int3(srcCoord + uint2(2, 1), _SrcMipLevel)))) : minDepth;
+    
+    minDepth = needExtraSampleY ? ClosestDepth(minDepth, ClosestDepth(
+        _ZMip_From.Load(int3(srcCoord + uint2(0, 2), _SrcMipLevel)),
+        _ZMip_From.Load(int3(srcCoord + uint2(1, 2), _SrcMipLevel)))) : minDepth;
+    
+    minDepth = needExtraSampleY && needExtraSampleX ? ClosestDepth(minDepth,
+    _ZMip_From.Load(int3(srcCoord + uint2(2, 2), _SrcMipLevel))) : minDepth;
+
+    
     // Closest depth
-    _ZMip_To[id.xy] = ClosestDepth(ClosestDepth(d0, d1), ClosestDepth(d2, d3));
+    _ZMip_To[id.xy] = minDepth;
 }

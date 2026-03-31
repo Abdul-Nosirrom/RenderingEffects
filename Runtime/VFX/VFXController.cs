@@ -27,6 +27,8 @@ namespace FS.Rendering
     {
         [SerializeField, HideInInspector] private List<VFXAnimationPlayer> m_animators = new();
         [SerializeField, HideInInspector] private List<ParticleSystem> m_particleSystems = new();
+        [SerializeField, HideInInspector] private List<TubeTrailEmitter> m_tubeEmitters = new();
+        [SerializeField, HideInInspector] private List<TrailRenderer> m_trailRenderers = new();
 
         protected override bool IsInitialized =>
             !((m_animators.Count == 0 && m_particleSystems.Count == 0) || m_playbackDuration < 0);
@@ -51,6 +53,8 @@ namespace FS.Rendering
             
             GetComponentsInChildren(m_animators);
             GetComponentsInChildren(m_particleSystems);
+            GetComponentsInChildren(m_tubeEmitters);
+            GetComponentsInChildren(m_trailRenderers);
             
             var prevLooping = m_isLooping;
             var prevDuration = m_playbackDuration;
@@ -95,6 +99,7 @@ namespace FS.Rendering
                 foreach (var animator in m_animators) animator.Play();
             }
 
+            foreach (var tubeEmitter in m_tubeEmitters) tubeEmitter.StartEmission();
             foreach (var system in m_particleSystems) system.Play(false); // w/ children false because technically we're gonna loop through them all & play them
         }
 
@@ -102,12 +107,14 @@ namespace FS.Rendering
         {
             if (immediate)
             {
+                foreach (var tubeEmitter in m_tubeEmitters) tubeEmitter.StopEmission(true);
                 foreach (var system in m_particleSystems) system.Stop(false, ParticleSystemStopBehavior.StopEmittingAndClear);
                 
                 OnStopped();
             }
             else
             {
+                foreach (var tubeEmitter in m_tubeEmitters) tubeEmitter.StopEmission(false);
                 foreach (var system in m_particleSystems) system.Stop(false, ParticleSystemStopBehavior.StopEmitting);
                 StartCoroutine(WaitForParticlesToFinish());
             }
@@ -118,7 +125,8 @@ namespace FS.Rendering
             // Wait until all particles are dead
             bool particlesAlive = true;
             bool animatorsAlive = true;
-            while (particlesAlive || animatorsAlive)
+            bool tubeSegmentsAlive = true;
+            while (particlesAlive || animatorsAlive || tubeSegmentsAlive)
             {
                 particlesAlive = false;
                 foreach (var system in m_particleSystems)
@@ -126,6 +134,16 @@ namespace FS.Rendering
                     if (system.IsAlive(true)) // Check children too
                     {
                         particlesAlive = true;
+                        break;
+                    }
+                }
+
+                tubeSegmentsAlive = false;
+                foreach (var tubeEmitter in m_tubeEmitters)
+                {
+                    if (tubeEmitter.TubeRenderer.AnySegmentsAlive && tubeEmitter.TubeRenderer.LifetimeType == TubeRenderer.LifetimeMode.Time)
+                    {
+                        tubeSegmentsAlive = true;
                         break;
                     }
                 }
@@ -167,6 +185,8 @@ namespace FS.Rendering
                 system.randomSeed = system.randomSeed; // This is important! If the setter is not called it'll randomly get a seed every frame it seems from editor playback
                 system.Play(false);
             }
+            
+            foreach (var tubeEmitter in m_tubeEmitters) tubeEmitter.StartEmission();
             
             var parentDirector = GetComponentInParent<VFXDirector>(false);
             m_hasParentVFXDirector = parentDirector != null && parentDirector.IsActive;
@@ -215,6 +235,7 @@ namespace FS.Rendering
                     animator.Time = sampleTime;
                 }
             }
+            foreach (var tubeEmitter in m_tubeEmitters) tubeEmitter.EmitPreview(10);
             foreach (var system in m_particleSystems)
             {
                 // Subsequent frames - simulate only the delta

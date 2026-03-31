@@ -44,15 +44,15 @@ namespace FS.Rendering
         public override void ProcessSelfAttributes(InspectorProperty property, List<Attribute> attributes)
         {
             // Replace this attribute (VFXDropDown) with a ValueDropDown calling to the correct getter
-            attributes.RemoveAll(a => a is VFXDropDownAttribute);
-            attributes.Add(new ValueDropdownAttribute("@VFXAssets.GetVFXAssets()"));
+            int numRemoved = attributes.RemoveAll(a => a is VFXDropDownAttribute);
+            if (numRemoved > 0) attributes.Add(new ValueDropdownAttribute("@VFXAssets.GetVFXAssets()"));
         }
     }
     
     /// <summary>
     /// Value drop down editor for VFX Controllers with the VFXDropDown Attribute Editor
     /// </summary>
-    public class VFXDropDownAttributeEditor : OdinAttributeDrawer<VFXDropDownAttribute, VFXController>
+    public class VFXDropDownAttributeEditor<T> : OdinAttributeDrawer<VFXDropDownAttribute, T> where T : VFXBase
     {
         protected override void DrawPropertyLayout(GUIContent label)
         {
@@ -91,7 +91,7 @@ namespace FS.Rendering
             var first = obj.FirstOrDefault();
             if (first == null) return;
             
-            ValueEntry.SmartValue = first.GetComponent<VFXController>();
+            ValueEntry.SmartValue = first.GetComponent<T>();
         }
     }
 #endif    

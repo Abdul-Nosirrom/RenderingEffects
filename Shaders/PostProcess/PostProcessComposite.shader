@@ -24,6 +24,27 @@
 
             float _BloomIntensity;
             float _BloomSpread;
+            
+            float3 TonemapChromaPreserving(float3 color, float shoulderStart = 0.9, float shoulderLength = 0.6)
+            {
+                float luma = dot(color, float3(0.2126, 0.7152, 0.0722));
+                
+                float mappedLuma;
+                if (luma <= shoulderStart)
+                {
+                    // Linear — don't touch LDR content
+                    mappedLuma = luma;
+                }
+                else
+                {
+                    // Soft shoulder compression for HDR
+                    float overshoot = luma - shoulderStart;
+                    float compressed = shoulderLength * (1.0 - exp(-overshoot / shoulderLength));
+                    mappedLuma = shoulderStart + compressed;
+                }
+                
+                return color * (mappedLuma / max(luma, 1e-6));
+            }
 
             // Out frag function takes as input a struct that contains the screen space coordinate we are going to use to sample our texture. It also writes to SV_Target0, this has to match the index set in the UseTextureFragment(sourceTexture, 0, …) we defined in our render pass script.   
             float4 Frag(Varyings input) : SV_Target0
@@ -52,7 +73,7 @@
                 // }
                 // #endif
                 
-                return float4(color, 1);
+                return float4(TonemapChromaPreserving(color), 1);
             }
             ENDHLSL
         }

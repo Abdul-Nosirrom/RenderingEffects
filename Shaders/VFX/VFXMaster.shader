@@ -620,7 +620,7 @@ CBUFFER_END
             
             tint = useRedForTransparency ? float3(1,1,1) : color.rgb;
             transparency = useRedForTransparency ? color.r : (useAlphaForDissolve ? 1.0 : color.a);
-            dissolveOffset = useAlphaForDissolve ? (1.0 - color.r) : 0.0;
+            dissolveOffset = useAlphaForDissolve ? (1.0 - color.a) : 0.0;
         }
         
         ENDHLSL
